@@ -19,7 +19,8 @@ Set the following items in your doxygen config file.
 For the first option you need to adapt the path to python in the batch
 file.    
 In case of the second option make sure that python is on your path and
-that python is set for files with extension .py
+that python is set for files with extension .py    
+In both cases you may have to add a path to the batch or python file.
 
 Known problems
 --------------
