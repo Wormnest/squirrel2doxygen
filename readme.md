@@ -35,6 +35,20 @@ too sometimes.
 Example: AILib.List main.nut the code at the bottom.
 3. Multi line string constants not supported: (starting with @" ).
 
+Settings
+--------
+There are a few settings inside doxygen\_squirrel\_filter.py that
+you can change to your personal preferences.
+
+1. keep\_function = True or False    
+Determines if you want to keep the keyword **function** or not.
+2.  keep\_constructor = True or False    
+Determines if you want to keep the keyword **constructor** or not.
+3. check\_end\_of\_class = True or False    
+Determines if you want to check if a ';' follows the closing '}'
+of a class definition. You can speed up filtering by turning this
+off if you always add a ";" yourself.
+
 Copyright
 ---------
 Copyright Jacob Boerema 2015.    
