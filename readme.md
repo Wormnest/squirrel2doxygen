@@ -19,21 +19,17 @@ Set the following items in your doxygen config file.
 For the first option you need to adapt the path to python in the batch
 file.    
 In case of the second option make sure that python is on your path and
-that python is set for files with extension .py    
+that python is set for files with extension .py and possibly you also need to
+set the path to the python script.    
 In both cases you may have to add a path to the batch or python file.
 
 Known problems
 --------------
-1. Functions need to be defined inside the class or they won't be
-shown.    
-It's not easy to fix this: we would have to parse the source twice.
-First to find all the functions not defined inside the class and then
-a second time to add them inside the class.    
-Example: MailAI TownManager.nut
-2. Inline code in the file outside of any function can confuse doxygen
+1. Inline code in the file outside of any function can confuse doxygen
 too sometimes.    
 Example: AILib.List main.nut the code at the bottom.
-3. Multi line string constants not supported: (starting with @" ).
+2. Multi line string constants not supported: (starting with @" ).
+3. Doxygen can get confused by class names that have a "." in them.
 
 Settings
 --------
@@ -47,7 +43,11 @@ Determines if you want to keep the keyword **constructor** or not.
 3. check\_end\_of\_class = True or False    
 Determines if you want to check if a ';' follows the closing '}'
 of a class definition. You can speed up filtering by turning this
-off if you always add a ";" yourself.
+off if you always add a ";" yourself.    
+4. track\_class\_functions = True or False    
+Determines if you want to track all member functions of all classes and add them inside the class if necessary, since Squirrel allows class member functions to be declared outside the class itself.    
+Note that this will slow down parsing considerably but is necessary if not all member functions are inside the class definition.
+If this option is set to True then check\_end\_of\_class will also be set to True.
 
 Copyright
 ---------
