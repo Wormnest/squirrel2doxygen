@@ -45,12 +45,11 @@
 
 ## Known problems:
 ## ---------------
-## 1. Enum definitions need a ";" after the closing brace "}" or doxygen will get confused.
-## 2. Inline code in the file outside of any function can confuse doxygen too sometimes
+## 1. Inline code in the file outside of any function can confuse doxygen too sometimes
 ## Example: AILib.List main.nut the code at the bottom.
-## 3. Multi line string constants not supported: (starting with @" ). Note multi line string
+## 2. Multi line string constants not supported: (starting with @" ). Note multi line string
 ## constants also support " inside them by writing ""
-## 4. Doxygen can get confused by class names that have a "." in them.
+## 3. Doxygen can get confused by class names that have a "." in them.
 
 
 # First version: 2015-06-15/17
@@ -69,6 +68,8 @@ keep_constructor = True;
 
 ## Check for "}" at end of class definition and add a ";"if it's not there.
 ## You can speed up filtering by turning this off if you always add a ";" yourself
+## @note if track_class_functions is True then this variable will always be set to True.
+## Now also used for any closing brace "}" without ";".
 check_end_of_class = True;
 
 ## Track all member functions of all classes and add them inside the class if necessary.
@@ -247,18 +248,19 @@ class SquirrelFilter:
 		else:
 			return str_start;
 
-	## Checks if we have arrived at the end of class.
+	## Checks if a ";" follows end of block "}" and checks if this is the end of a class.
 	def check_end_of_class(self, part):
-		# For now we hardcode end of class level at level 0
-		if (self.block_level == 0 and self.want_class_end == True):
-			# Check if a ";" follows, if not add it or doxygen can get somewhat confused.
-			classend = self.re_classend.match(part);
-			if (classend is None):
-				# No ";" so add it.
-				part = ";" + part;
+		# Check if a ";" follows, if not add it or doxygen can get somewhat confused.
+		block_end = self.re_classend.match(part);
+		if (block_end is None):
+			# No ";" so add it.
+			part = ";" + part;
+		# Assuming for now that we don't encounter nested classes!
+		if (self.want_class_end == True and self.block_level == 0):
 			self.want_class_end = False;
 			self.cur_class = None;
-			self.debugprint("<end of class>");
+			self.debugprint("<end of class>\n");
+
 		return part;
 	
 	## old_output is the already filtered part of the line; last_part is the part before "}"
@@ -418,6 +420,7 @@ class SquirrelFilter:
 			output = output[:temp.start()] + "#include " + output[temp.end():];
 
 		# Check for reaching end of class brace.
+		# Also makes sure any "}" is always followed by a ";".
 		if check_end_of_class:
 			output = self.parse_blocks(output);
 
