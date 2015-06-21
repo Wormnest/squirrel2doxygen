@@ -24,8 +24,11 @@
 
 ## @author Jacob Boerema
 ## @date 2015
-## @version 1.0
+## @version 2.0
 ## @copyright GPL version 2
+## Repositories:
+## http://dev.openttdcoop.org/projects/squirrel2doxygen/repository
+## https://bitbucket.org/jacobb/squirrel2doxygen
 
 ## Instructions.
 ## -------------
@@ -37,22 +40,22 @@
 ## + *.nut=doxygen_squirrel_filter.py
 ## For the first option you need to adapt the path to python in the batch file.
 ## In case of the second option make sure that python is on your path and that
-## python is set for files with extension .py
+## python is set for files with extension .py and possibly you also need to
+## set the path to the python script.
 
 ## Known problems:
 ## ---------------
-## 1. Functions need to be defined inside the class or they won't be shown.
-## It's not easy to fix this: we would have to parse the source twice. First to find all the
-## functions not defined inside the class and then a second time to add them inside the class.
-## Example: MailAI TownManager.nut
+## 1. Enum definitions need a ";" after the closing brace "}" or doxygen will get confused.
 ## 2. Inline code in the file outside of any function can confuse doxygen too sometimes
 ## Example: AILib.List main.nut the code at the bottom.
 ## 3. Multi line string constants not supported: (starting with @" ). Note multi line string
 ## constants also support " inside them by writing ""
+## 4. Doxygen can get confused by class names that have a "." in them.
 
 
 # First version: 2015-06-15/17
 # Tested on Windows 7 with Squirrel version 2.2 as used by OpenTTD for AI and game scripts.
+# Version 2: 2015-06-21
 
 # --------------------------------------------------------------
 # Settings that can be changed by the user of our doxygen filter
@@ -68,7 +71,16 @@ keep_constructor = True;
 ## You can speed up filtering by turning this off if you always add a ";" yourself
 check_end_of_class = True;
 
+## Track all member functions of all classes and add them inside the class if necessary.
+## Will slow down parsing but is necessary if not all member functions are inside the class definition.
+track_class_functions = True;
+
+
 # --------------------------------------------------------------
+
+## If track_class_functions is True the check_end_of_class needs to be True too.
+if track_class_functions:
+	check_end_of_class = True;
 
 # Import some libraries that we need.
 import os
@@ -87,6 +99,28 @@ MAX_POS_ON_LINE = 999999;
 ## Print a string to stderr
 def alwaysprint(string):
 	sys.stderr.write(string);
+
+## ClassData is our class to keep track of the functions used in a class.
+class ClassData:
+	def __init__(self, name):
+		self.classname = name;
+		self.functions = [];
+		self.missing = [];
+		self.params = [];
+		self.output_buffer = "";
+	
+	def AddClassMemberFunctionInside(self, name):
+		self.functions.append(name);
+
+	def AddClassMemberFunctionOutside(self, name):
+		self.missing.append(name);
+
+	def AddMemberFunctionParams(self, parameters):
+		self.params.append(parameters);
+	
+	def SetBuffer(self, outbuf):
+		self.output_buffer = outbuf;
+
 
 ## SquirrelFilter is our class to convert Squirrel scripts to something doxygen can understand.
 class SquirrelFilter:
@@ -112,6 +146,16 @@ class SquirrelFilter:
 
 	## Determines at what level we are in the code blocks hierarchy needed to find end of class.
 	block_level = 0;
+	
+	## Classes found in the currently processed file.
+	classes = [];
+	class_names = [];
+	
+	## We need an output buffer since we can only determine for sure after we have read the whole
+	## file whether we need to make come changes to certain classes.
+	## This buffer will contain the part of the output since the beginning of the file or since
+	## we encountered an end of class marker.
+	outbuf = "";
 
 	# ----------------------------------
 
@@ -141,18 +185,28 @@ class SquirrelFilter:
 	re_constructor = re.compile("constructor");
 	re_function = re.compile("function");
 
-	# TODO:
-	# Support comments /* public: */ and /* private: */ and change it to keywords public: and private:
-	# Same for static?
+	## @todo Support functions starting with _ as being private.
+	## Support comments /* public: */ and /* private: */ and change it to keywords public: and private:
 
 	# 3. Squirrel elements we need to find
 	re_blockstart = re.compile("\{");
 	re_blockend = re.compile("\}");
+	re_functionend = re.compile("\)");
 	re_classend = re.compile("\s*;");
-	re_classname = re.compile("\s*class\s+([a-zA-Z_]+[a-zA-Z_0-9]*)")
+	re_classname = re.compile("\s*class\s+([a-zA-Z_]+[a-zA-Z_0-9.]*)");
+	re_functionname = re.compile("\s*function\s+([a-zA-Z_]+[a-zA-Z_0-9]*)");
+	# WARNING: Params can be spread over multiple lines so we can't use it in regexp!
+	#re_classfunctionname = re.compile("\s*function\s+([a-zA-Z_]+[a-zA-Z_0-9]*)::([a-zA-Z_]+[a-zA-Z_0-9]*)(\s*\([^)]*)");
+	re_classfunctionname = re.compile("\s*function\s+([a-zA-Z_]+[a-zA-Z_0-9.]*)::([a-zA-Z_]+[a-zA-Z_0-9]*)");
 
 	def __init__(self, filename):
 		self.filename = filename;
+		self.outbuf = "";
+		## Tells if we are looking for a functions parameters
+		self.need_function_params = False;
+		## The buffer to store the function parameters in
+		self.params_buf = "";
+		self.cur_class = None;
 
 	## Print a string to stderr if print_debug_info is True
 	def debugprint(self, string):
@@ -202,9 +256,28 @@ class SquirrelFilter:
 			if (classend is None):
 				# No ";" so add it.
 				part = ";" + part;
-				self.want_class_end = False;
-				self.debugprint("<end of class>");
+			self.want_class_end = False;
+			self.cur_class = None;
+			self.debugprint("<end of class>");
 		return part;
+	
+	## old_output is the already filtered part of the line; last_part is the part before "}"
+	def end_of_block(self, old_output, last_part):
+		self.block_level -= 1;
+		self.debugprint("*** " + str(self.block_level) + " ***");
+		old_output += last_part;
+		# For now we hardcode end of class level at level 0
+		if (self.block_level == 0 and self.want_class_end == True):
+			# End of Class. Add buffer to Class and set current buffer back to ""
+			self.outbuf += old_output;
+			self.cur_class.SetBuffer(self.outbuf);
+			# Rest buffer
+			self.outbuf = "";
+			# Add the closing "}" of the class back to output
+			old_output = "}";
+		else:
+			old_output += "}";
+		return old_output;
 	
 	## Parse "{" and "}" to keep track of the code level.
 	def parse_blocks(self, part):
@@ -222,9 +295,7 @@ class SquirrelFilter:
 					part = part[blockstart.end():];
 				else:
 					# block end comes first: decrease level
-					self.block_level -= 1;
-					self.debugprint("*** " + str(self.block_level) + " ***");
-					output += part[:blockend.end()];
+					output = self.end_of_block(output, part[:blockend.start()]);
 					part = self.check_end_of_class(part[blockend.end():]);
 			elif blockstart:
 				# Only start of block available: increase block level
@@ -234,17 +305,33 @@ class SquirrelFilter:
 				part = part[blockstart.end():];
 			elif blockend:
 				# Only end of block available: decrease block level
-				self.block_level -= 1;
-				self.debugprint("*** " + str(self.block_level) + " ***");
-				output += part[:blockend.end()];
+				output = self.end_of_block(output, part[:blockend.start()]);
 				part = self.check_end_of_class(part[blockend.end():]);
 			else:
 				output += part;
 				break;
+			
+			# Make sure we don't get into an endless loop
+			if (self.block_level < 0 or self.block_level > 50):
+				raise ValueError("Endless loop detected in parse_blocks! Block level is " + str(self.block_level));
+
 		return output;
 
-	## Filter the string part and return in output.
-	## Note that we currently only allow one of each element on a line.
+	## Checks whether we have reached the end of a function's parameters.
+	def check_params_end(self, part):
+		if self.need_function_params:
+			temp = self.re_functionend.search(part);
+			if temp:
+				# Found end of params
+				self.params_buf += part[:temp.end()];
+				self.cur_class.AddMemberFunctionParams(self.params_buf);
+				self.need_function_params = False;
+				self.params_buf = "";
+			else:
+				self.params_buf += part;
+
+	## Filter the string part
+	## @note We currently only allow one of each element on a line.
 	def filter_part(self, part):
 		output = part;
 		start_pos = 0;
@@ -262,11 +349,14 @@ class SquirrelFilter:
 			output = output[:extends.start()] + ":" + output[extends.end():]
 
 		# Get class name if a class is defined
-		classname = self.re_classname.match(output);
+		classname = self.re_classname.search(output);
 		if classname:
 			self.want_class_start = True;
 			start_pos = classname.end();
 			self.current_class = classname.group(1);
+			self.cur_class = ClassData(self.current_class);
+			self.classes.append(self.cur_class);
+			self.class_names.append(self.current_class);
 			alwaysprint("class " + self.current_class + "\n");
 		
 		# Check if we can find a class start block
@@ -278,6 +368,31 @@ class SquirrelFilter:
 				self.want_class_start = False;
 				self.want_class_end = True;
 				output = first_part + last_part[:class_start.end()] + "public:" + last_part[class_start.end():];
+
+		# Check for a function and register it's name if tracking is on
+		if track_class_functions:
+			if self.need_function_params:
+				self.check_params_end(output);
+			if self.want_class_end:
+				# Inside a class we only need to register functions names
+				fn_name = self.re_functionname.search(output);
+				if fn_name:
+					self.cur_class.AddClassMemberFunctionInside(fn_name.group(1));
+			elif (self.block_level == 0):
+				#Outside a class. Assuming we can only start class functions at the outermost level
+				fn_name = self.re_classfunctionname.search(output);
+				if fn_name:
+					cname = fn_name.group(1);
+					fname = fn_name.group(2);
+					cidx = self.class_names.index(cname);
+					# Set current class to the class of this function.
+					self.cur_class = self.classes[cidx];
+					if self.classes[cidx].functions.count(fname) == 0:
+						# Not found in list of classes, add to missing
+						self.cur_class.AddClassMemberFunctionOutside(fname);
+						# Looking for functions params now
+						self.need_function_params = True;
+						self.check_params_end(output[fn_name.end(2):]);
 
 		# Replace constructor with the class name
 		constr = self.re_constructor.search(output);
@@ -302,28 +417,29 @@ class SquirrelFilter:
 			# Found import, replace by #include. We don't bother with the closing ")" since it seems doxygen doesn't care.
 			output = output[:temp.start()] + "#include " + output[temp.end():];
 
+		# Check for reaching end of class brace.
 		if check_end_of_class:
 			output = self.parse_blocks(output);
 
-		return output
+		# Add output to buffer.
+		self.outbuf += output;
 
-	## Handle one line of text and send to stdout after filtering.
+	## Handle one line of text and send to buffer after filtering.
 	def line_handler(self, line, lineno):
 		start_pos = 0;
 		temp_line = line[start_pos:]
-		outline = "";
 
 		while(True):
 			if (self.in_multiline_comment):
 				ml_end = self.re_multiline_comment_end.search(temp_line);
 				if (ml_end is None):
 					# End of multi line comment not found on this line
-					outline += temp_line;
+					self.outbuf += temp_line;
 					break;
 				else:
 					# End of multi line comment found
 					self.in_multiline_comment = False;
-					outline += temp_line[:ml_end.end()];
+					self.outbuf += temp_line[:ml_end.end()];
 					temp_line = temp_line[ml_end.end():];
 			else:
 				ml_start = self.re_multiline_comment_start.search(temp_line);
@@ -331,21 +447,21 @@ class SquirrelFilter:
 				str_start = self.re_string.search(temp_line);
 				next_match = self.first_match(ml_start, sl_start, str_start);
 				if next_match is None:
-					outline += self.filter_part(temp_line);
+					self.filter_part(temp_line);
 					break;
 				elif next_match == ml_start:
 					self.in_multiline_comment = True;
 					# Filter part before the multi line comment starts and add to output
-					outline += self.filter_part(temp_line[:ml_start.end()]);
+					self.filter_part(temp_line[:ml_start.end()]);
 					temp_line = temp_line[ml_start.end():];
 				elif next_match == sl_start:
 					# First filter the part before the comment starts, then add the comment itself unfiltered
-					outline += self.filter_part(temp_line[:sl_start.start()]);
-					outline += temp_line[sl_start.start():];
+					self.filter_part(temp_line[:sl_start.start()]);
+					self.outbuf += temp_line[sl_start.start():];
 					break;
 				else:
 					# Filter the part before the string starts and add to output
-					outline += self.filter_part(temp_line[:str_start.start()]);
+					self.filter_part(temp_line[:str_start.start()]);
 					# Then try to find the end of string
 					temp_line = temp_line[str_start.start():]
 					str_end = self.re_string.search(temp_line);
@@ -353,30 +469,55 @@ class SquirrelFilter:
 						#Error
 						alwaysprint("** Warning: didn't find end of string on line" + str(lineno+1));
 						# Add the string contents to output
-						outline += temp_line;
+						self.outbuf += temp_line;
 						break;
 					else:
 						# Add the string contents to output
-						outline += temp_line[:str_end.end()];
+						self.outbuf += temp_line[:str_end.end()];
 						temp_line = temp_line[str_end.end():]
-		self.debugprint(outline);
-		#alwaysprint(outline);
-		return outline
+
+	## Write the data in buffer to outfile (stdout)
+	def WriteBuf(self, buffer):
+		try:
+			# Encode output because otherwise in e.g. TownManager.nut you get an encoding error
+			self.outfile.write(buffer.encode("utf-8"));
+		except UnicodeEncodeError,e:
+			alwaysprint("*** Unicode encoding error!\n");
 	
 	## Filter the file and output to stdout
 	def filter(self):
 		self.outfile = sys.stdout;
 
-		# Open file for reading and writing (r+)
-		nut_file = io.open(self.filename, "r+", newline='', encoding='utf-8')   # newline='' means don't convert line endings
+		# Open file for reading
+		nut_file = io.open(self.filename, "r", newline='', encoding='utf-8')   # newline='' means don't convert line endings
 		lines = nut_file.readlines();
 		nut_file.seek(0);
 
+		# Parse all lines in file
 		for i, line in enumerate(lines):
-			try:
-				self.outfile.write(self.line_handler(line, i));
-			except UnicodeEncodeError,e:
-				alwaysprint("*** Unicode encoding error on line " + str(i+1) + "!\n");
+			self.line_handler(line, i);
+
+		if keep_function:
+			function_str = "function ";
+		else:
+			function_str = "";
+		# Write buffered data per class and add missing functions if needed.
+		for classdata in self.classes:
+			# Write buffer of everything before end of class block to output
+			self.WriteBuf(classdata.output_buffer);
+			
+			#alwaysprint("Class " + classdata.classname + "\n");
+			#alwaysprint("----- functions defined inside class -----\n");
+			#for idx, fn in enumerate(classdata.functions):
+			#	alwaysprint("function " + fn + "\n");
+			if len(classdata.missing) > 0:
+				alwaysprint("----- missing functions inside class " + classdata.classname + "-----\n");
+				for idx, fn in enumerate(classdata.missing):
+					alwaysprint("function " + fn + "\n");
+					self.WriteBuf(function_str + fn + classdata.params[idx] + ";\n");
+
+		# Write buffer of everything after the last class definition block.
+		self.WriteBuf(self.outbuf);
 
 		# Close our file
 		nut_file.close();
