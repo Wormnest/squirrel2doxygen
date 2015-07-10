@@ -76,6 +76,12 @@ check_end_of_class = True;
 ## Will slow down parsing but is necessary if not all member functions are inside the class definition.
 track_class_functions = True;
 
+## Do we want to hide private functions, variables etc or not.
+## A symbol is considered private if it starts with an underscore.
+## @note Classes themselves are currently never considered private otherwise we would not
+## be able to document the SuperLib classes.
+## @note Currently only marking private inside classes is supported.
+hide_private_symbols = True;
 
 # --------------------------------------------------------------
 
@@ -195,10 +201,15 @@ class SquirrelFilter:
 	re_functionend = re.compile("\)");
 	re_classend = re.compile("\s*;");
 	re_classname = re.compile("\s*class\s+([a-zA-Z_]+[a-zA-Z_0-9.]*)");
-	re_functionname = re.compile("\s*function\s+([a-zA-Z_]+[a-zA-Z_0-9]*)");
+	re_functionname = re.compile("\s*(function)\s+([a-zA-Z_]+[a-zA-Z_0-9]*)");
 	# WARNING: Params can be spread over multiple lines so we can't use it in regexp!
 	#re_classfunctionname = re.compile("\s*function\s+([a-zA-Z_]+[a-zA-Z_0-9]*)::([a-zA-Z_]+[a-zA-Z_0-9]*)(\s*\([^)]*)");
-	re_classfunctionname = re.compile("\s*function\s+([a-zA-Z_]+[a-zA-Z_0-9.]*)::([a-zA-Z_]+[a-zA-Z_0-9]*)");
+	re_classfunctionname = re.compile("\s*(function)\s+([a-zA-Z_]+[a-zA-Z_0-9.]*)::([a-zA-Z_]+[a-zA-Z_0-9]*)");
+	# Can't use the following re because it also matches abc_def = ...
+	# And since a variable can start at the beginning of a line we can't use \s+
+	#re_privatevar = re.compile("\s*(_[a-zA-Z_0-9]*)\s+=");
+	re_privatevar = re.compile("\s*([a-zA-Z_0-9]*)\s+=");
+	re_privateenum = re.compile("\s*(enum)\s+(_[a-zA-Z_0-9]*)");
 
 	def __init__(self, filename):
 		self.filename = filename;
@@ -379,22 +390,53 @@ class SquirrelFilter:
 				# Inside a class we only need to register functions names
 				fn_name = self.re_functionname.search(output);
 				if fn_name:
-					self.cur_class.AddClassMemberFunctionInside(fn_name.group(1));
+					self.cur_class.AddClassMemberFunctionInside(fn_name.group(2));
+					# Check if function name starts with a "_" (private function)
+					if hide_private_symbols and fn_name.group(2).startswith("_"):
+						output = output[:fn_name.start(1)] + " /** @private */ " + output[fn_name.start(1):];
 			elif (self.block_level == 0):
 				#Outside a class. Assuming we can only start class functions at the outermost level
 				fn_name = self.re_classfunctionname.search(output);
 				if fn_name:
-					cname = fn_name.group(1);
-					fname = fn_name.group(2);
+					cname = fn_name.group(2);
+					fname = fn_name.group(3);
 					cidx = self.class_names.index(cname);
 					# Set current class to the class of this function.
 					self.cur_class = self.classes[cidx];
-					if self.classes[cidx].functions.count(fname) == 0:
+					if (self.classes[cidx].functions.count(fname) == 0 and
+						not (hide_private_symbols and fn_name.group(3).startswith("_"))):
 						# Not found in list of classes, add to missing
 						self.cur_class.AddClassMemberFunctionOutside(fname);
 						# Looking for functions params now
 						self.need_function_params = True;
-						self.check_params_end(output[fn_name.end(2):]);
+						self.check_params_end(output[fn_name.end(3):]);
+
+		# Hide private variables/enums if needed
+		# Only at global scope (level 0) or global class scope (level 1)
+		if (hide_private_symbols and (self.block_level == 0 or
+			(self.want_class_end and self.block_level == 1))):
+			temp = self.re_privatevar.search(output);
+			if temp:
+				# Make sure it starts with _
+				if temp.group(1).startswith("_"):
+					# private variable: add private: marker
+					if self.block_level == 0:
+						## @bug This does not work. Maybe comment the whole source line?
+						## But then what if a variable ends on a different line.
+						doxy_cmd = " /** @internal */ ";
+					else:
+						doxy_cmd = " /** @private */ ";
+					output = output[:temp.start(1)] + doxy_cmd + output[temp.start(1):];
+			# Test for private enumerate
+			temp = self.re_privateenum.search(output);
+			if temp and temp.group(2).startswith("_"):
+				if self.block_level == 0:
+					## @bug This does not work. Maybe comment the whole source line?
+					## But then what if an enum ends on a different line, which is likely.
+					doxy_cmd = " /** @internal */ ";
+				else:
+					doxy_cmd = " /** @private */ ";
+				output = output[:temp.start(1)] + doxy_cmd + output[temp.start(1):];
 
 		# Replace constructor with the class name
 		constr = self.re_constructor.search(output);
