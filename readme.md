@@ -48,6 +48,12 @@ off if you always add a ";" yourself.
 Determines if you want to track all member functions of all classes and add them inside the class if necessary, since Squirrel allows class member functions to be declared outside the class itself.    
 Note that this will slow down parsing considerably but is necessary if not all member functions are inside the class definition.
 If this option is set to True then check\_end\_of\_class will also be set to True.
+5. hide\_private\_symbols = True or False    
+Determines if you want to hide private functions, variables and enums or not.    
+A symbol is considered private if it starts with an underscore.    
+Notes:
+ + Classes themselves are currently never considered private otherwise we would not be able to document the SuperLib classes.    
+ + Currently only marking private inside classes is supported.
 
 Copyright
 ---------
