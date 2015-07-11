@@ -17,6 +17,8 @@ class Test extends AIController {
     distance_of_route = {};		///< public, should be visible
 	_class_private_var = null;	///< private, don't use!
 _private_start_of_line = true;	///< Another private that should be hidden!
+
+	doxygen_private = -1;		///< @private Using doxygen command to make 1 class item private
 	
 	/** This is a private Enum that should not appear in public documentation. */
 	enum _Private_Enum {
@@ -36,6 +38,17 @@ _private_start_of_line = true;	///< Another private that should be hidden!
 	
 	/** This is for internal use only! */
 	function _internal() {}
+	
+	/// @privatesection
+	/** This section should stay private. We use the doxygen private section command. */
+	function Private1() {}
+	/** Second private function that should not be visible. */
+	function Private2() {}
+	function Third() {}
+	
+	/// @publicsection
+	/** Part of a public section that should be visible with doxygen. */
+	function ThisShouldBePublic() {}
 
 }
 
