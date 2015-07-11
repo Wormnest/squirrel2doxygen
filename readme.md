@@ -13,7 +13,7 @@ Set the following items in your doxygen config file.
 
 1. EXTENSION_MAPPING: Add: nut=C++    
 2. FILE_PATTERNS: Add: *.nut    
-3. FILTER_PATTERS: Add either:    
+3. FILTER_PATTERNS: Add either:    
     + \*.nut=doxygen\_squirrel\_filter.bat [or]    
     + \*.nut=doxygen\_squirrel\_filter.py    
 For the first option you need to adapt the path to python in the batch
