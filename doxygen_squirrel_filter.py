@@ -524,9 +524,13 @@ class SquirrelFilter:
 	## Write the data in buffer to outfile (stdout)
 	def WriteBuf(self, buffer):
 		try:
-			# Encode output because otherwise in e.g. TownManager.nut you get an encoding error
-			self.outfile.write(buffer.encode("utf-8"));
-		except UnicodeEncodeError,e:
+			# Encode output because otherwise in e.g. TownManager.nut you get an encoding error (degree symbol)
+			# To make it work in both python 2 and 3 we check the version here
+			if sys.version_info[0] < 3:
+				self.outfile.write(buffer.encode("utf-8"));
+			else:
+				self.outfile.buffer.write(buffer.encode("utf-8"));
+		except UnicodeEncodeError as e:
 			alwaysprint("*** Unicode encoding error!\n");
 	
 	## Filter the file and output to stdout
