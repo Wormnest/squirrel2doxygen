@@ -2,8 +2,9 @@ Doxygen filter for Squirrel
 ===========================
 
 This is a doxygen filter to convert Squirrel scripts into something
-that doxygen can convert into C++.   
-It has been tested on Windows 7 with python 2.7.    
+resembling C++ code that doxygen can parse for documentation comments.   
+It has been tested on Windows 10 with python 2.7 and python 3.7 and is
+also known to work on the Linux infrastructure of openttdcoop.org.    
 It was designed for Squirrel version 2.2 as used by OpenTTD for
 AI and Game scripts.
 
@@ -27,8 +28,8 @@ Known problems
 --------------
 1. Inline code in the file outside of any function can confuse doxygen
 too sometimes.    
-Example: AILib.List main.nut the code at the bottom.
-2. Multi line string constants not supported: (starting with @" ).
+    Example: AILib.List main.nut the code at the bottom.
+2. Multi line string constants are not supported: (starting with @" ).
 3. Doxygen can get confused by class names that have a "." in them.
 
 Settings
@@ -57,5 +58,12 @@ Notes:
 
 Copyright
 ---------
-Copyright Jacob Boerema 2015.    
+Copyright Jacob Boerema 2015, 2019.    
 License: GPL version 2.
+
+Repository
+----------
+The source code can be downloaded from:
+https://github.com/Wormnest/squirrel2doxygen
+
+
