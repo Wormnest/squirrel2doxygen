@@ -3,7 +3,7 @@
 #
 # This is a filter to convert Squirrel (*.nut) scripts
 # into something doxygen can understand.
-# Copyright (C) 2015  Jacob Boerema
+# Copyright (C) 2015, 2019  Jacob Boerema
 # 
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,7 +23,7 @@
 ## @file doxygen_squirrel_filter.py Filter for Squirrel to make doxygen understand it as C++.
 
 ## @author Jacob Boerema
-## @date 2015
+## @date 2015, 2019
 ## @version 2.0
 ## @copyright GPL version 2
 ## Repositories:
@@ -50,11 +50,15 @@
 ## 2. Multi line string constants not supported: (starting with @" ). Note multi line string
 ## constants also support " inside them by writing ""
 ## 3. Doxygen can get confused by class names that have a "." in them.
+## 4. Doxygen gets confused if global const or enum declarations don't get ended by a
+## semicolon ";". If your documentation gets cut short then looking for missing semicolons
+## is the first thing to check.
 
 
 # First version: 2015-06-15/17
 # Tested on Windows 7 with Squirrel version 2.2 as used by OpenTTD for AI and game scripts.
 # Version 2: 2015-06-21
+# Updated October 2019 to also work with python 3.
 
 # --------------------------------------------------------------
 # Settings that can be changed by the user of our doxygen filter

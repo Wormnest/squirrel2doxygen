@@ -31,6 +31,9 @@ too sometimes.
     Example: AILib.List main.nut the code at the bottom.
 2. Multi line string constants are not supported: (starting with @" ).
 3. Doxygen can get confused by class names that have a "." in them.
+4. Doxygen gets confused if global const or enum declarations don't get
+ended by a semicolon ";". If your documentation gets cut short then
+looking for missing semicolons is the first thing to check.
 
 Settings
 --------
